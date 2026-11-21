@@ -13,7 +13,7 @@
 <section class="panel"><div class="grid"><div class="stat"><span class="muted">BTC / USD</span><b id="price">—</b></div><div class="stat"><span class="muted">Signal</span><b class="warning" id="signal">WAIT</b></div><div class="stat"><span class="muted">Demand (20 candles)</span><b id="demand">—</b></div><div class="stat"><span class="muted">Supply (20 candles)</span><b id="supply">—</b></div></div><p class="muted signal-note" id="reason">WAIT — no Kalshi market quotes or contract details supplied.</p><p class="muted" id="updated">Waiting for live candle data…</p></section>
 <section class="panel"><h2>Bitcoin 1-minute candles</h2><div id="chart"><canvas id="canvas"></canvas></div><div class="legend"><span><i class="dot" style="background:#36c990"></i>Up candle / demand</span><span><i class="dot" style="background:#fa657b"></i>Down candle / supply</span><span><i class="dot" style="background:#ffc857"></i>EMA 9</span></div><p class="muted">Supply/demand are simple recent-high/low reference levels, not verified institutional order zones. Long/short trade arrows require validated trade rules and contract data. The EMA is not actual futures positioning.</p></section>
 <section class="panel"><h2>Longs & shorts</h2><div class="grid"><div class="stat"><span class="muted">Futures long/short ratio</span><b>Unavailable</b></div><div class="stat"><span class="muted">Open interest</span><b>Unavailable</b></div></div><p class="muted">Requires a separate futures data provider. No fabricated long/short positioning is displayed.</p></section>
-<section class="panel"><h2>Kalshi 15-minute market</h2><div class="grid"><div class="stat"><span class="muted">YES ask / bid</span><b>— / —</b></div><div class="stat"><span class="muted">NO ask / bid</span><b>— / —</b></div></div><p class="muted">Kalshi connection not configured. No trade signal or realistic Kalshi paper P&amp;L can be calculated yet.</p></section>
+<section class="panel"><h2>Kalshi 15-minute market · automatic lookup</h2><div class="grid"><div class="stat"><span class="muted">Market</span><b id="marketName" style="font-size:13px;overflow-wrap:anywhere">Searching…</b></div><div class="stat"><span class="muted">Time remaining</span><b id="countdown">—</b></div><div class="stat"><span class="muted">YES ask / bid</span><b id="liveYes">— / —</b></div><div class="stat"><span class="muted">NO ask / bid</span><b id="liveNo">— / —</b></div><div class="stat"><span class="muted">Target / strike</span><b id="liveStrike">—</b></div><div class="stat"><span class="muted">Kalshi feed</span><b id="kalshiStatus" style="font-size:14px">Checking…</b></div></div><p class="muted" id="marketNote">Market discovery is informational. Verify the contract and its settlement terms in Kalshi before trading.</p><p class="muted"><a id="marketLink" href="https://kalshi.com/" target="_blank" rel="noopener noreferrer" style="color:#90baff">Open Kalshi to verify market</a></p></section>
 <section class="panel"><h2>Experimental signal inputs</h2><p class="muted notice">Enter the current Kalshi 15-minute market details yourself. These inputs are NOT live Kalshi data. Without valid inputs, the signal stays WAIT. This rule-based prototype is unvalidated and is not financial advice.</p><div class="grid-fields"><label class="field">YES ask (cents)<input id="yesAsk" type="number" min="1" max="99" step="1" placeholder="e.g. 48"></label><label class="field">YES bid (cents)<input id="yesBid" type="number" min="1" max="99" step="1" placeholder="e.g. 45"></label><label class="field">NO ask (cents)<input id="noAsk" type="number" min="1" max="99" step="1" placeholder="e.g. 55"></label><label class="field">NO bid (cents)<input id="noBid" type="number" min="1" max="99" step="1" placeholder="e.g. 52"></label><label class="field">BTC target / strike ($)<input id="strike" type="number" min="1" step="0.01" placeholder="Kalshi market target"></label><label class="field">Minutes remaining<input id="minutes" type="number" min="0" max="15" step="0.1" placeholder="0–15"></label></div><p class="muted">Inputs are cleared when this page reloads to avoid treating old quotes as live. Re-enter them whenever prices change. Fees are not calculated, so BUY signals remain disabled until real quotes and fees are connected.</p><div class="actions"><button id="evaluate" type="button">Evaluate setup</button><button id="clear" type="button">Clear quotes</button></div><p class="muted" id="setup">Waiting for market inputs.</p></section>
 <section class="panel"><h2>Paper trading setup</h2><div class="grid"><div class="stat"><span class="muted">Starting balance</span><b>$500</b></div><div class="stat"><span class="muted">Max trade cost</span><b>$25</b></div><div class="stat"><span class="muted">Daily loss limit</span><b>$15</b></div><div class="stat"><span class="muted">Open positions</span><b>0</b></div></div><p class="muted">Paper order entry will be enabled once real Kalshi bid/ask quotes and fee calculations are connected.</p><div class="actions"><button disabled>BUY YES</button><button disabled>BUY NO</button><button disabled>EXIT</button></div></section>
 <section class="panel"><h2>Connection & safety</h2><p id="details" class="muted">BTC data: connecting. Kalshi: disconnected. Futures positioning: disconnected.</p><small class="muted">This is a prototype, not a proven trading system. Live Bitcoin data is informational and may be delayed. Refreshes only while the page is open. Do not place real trades based on this prototype.</small></section>
@@ -21,11 +21,12 @@
 'use strict';
 const $=id=>document.getElementById(id),canvas=$('canvas'),ctx=canvas.getContext('2d');
 let candles=[],lastGood=0;
+let currentMarket=null,marketLastGood=0,marketError="";
 const inputIds=['yesAsk','yesBid','noAsk','noBid','strike','minutes'];
 const money=n=>Number.isFinite(n)?'$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
 function ema(arr,period){const out=[];let v=null;for(let i=0;i<arr.length;i++){v=v===null?arr[i]:arr[i]*(2/(period+1))+v*(1-2/(period+1));out.push(v)}return out}
 function draw(){const box=$('chart').getBoundingClientRect(),dpr=Math.min(window.devicePixelRatio||1,2);canvas.width=Math.max(1,Math.floor(box.width*dpr));canvas.height=Math.max(1,Math.floor(box.height*dpr));ctx.setTransform(dpr,0,0,dpr,0,0);const w=box.width,h=box.height;ctx.clearRect(0,0,w,h);ctx.fillStyle='#10182a';ctx.fillRect(0,0,w,h);if(!candles.length){ctx.fillStyle='#9da9c3';ctx.font='14px sans-serif';ctx.fillText('Waiting for live BTC candles…',18,35);return}const data=candles.slice(-60),top=16,bottom=h-28,left=10,right=w-65;let lo=Math.min(...data.map(c=>c.l)),hi=Math.max(...data.map(c=>c.h));const pad=(hi-lo)*.08||1;lo-=pad;hi+=pad;const y=p=>top+(hi-p)/(hi-lo)*(bottom-top),step=(right-left)/data.length,bar=Math.max(2,step*.62);ctx.strokeStyle='#27334d';ctx.fillStyle='#91a0bd';ctx.font='11px sans-serif';for(let j=0;j<=4;j++){let p=lo+(hi-lo)*j/4,yy=y(p);ctx.beginPath();ctx.moveTo(left,yy);ctx.lineTo(right,yy);ctx.stroke();ctx.fillText(Math.round(p).toLocaleString(),right+5,yy+3)}const recent=data.slice(-20),supply=Math.max(...recent.map(c=>c.h)),demand=Math.min(...recent.map(c=>c.l));for(const [price,color] of [[supply,'#fa657b'],[demand,'#36c990']]){ctx.strokeStyle=color;ctx.setLineDash([5,4]);ctx.beginPath();ctx.moveTo(left,y(price));ctx.lineTo(right,y(price));ctx.stroke();ctx.setLineDash([])}data.forEach((c,i)=>{let x=left+step*(i+.5),color=c.c>=c.o?'#36c990':'#fa657b';ctx.strokeStyle=color;ctx.fillStyle=color;ctx.beginPath();ctx.moveTo(x,y(c.h));ctx.lineTo(x,y(c.l));ctx.stroke();ctx.fillRect(x-bar/2,Math.min(y(c.o),y(c.c)),bar,Math.max(1,Math.abs(y(c.c)-y(c.o))))});const line=ema(data.map(c=>c.c),9);ctx.strokeStyle='#ffc857';ctx.lineWidth=1.7;ctx.beginPath();line.forEach((v,i)=>{const x=left+step*(i+.5);if(i===0)ctx.moveTo(x,y(v));else ctx.lineTo(x,y(v))});ctx.stroke();ctx.lineWidth=1;$('supply').textContent=money(supply);$('demand').textContent=money(demand)}
-async function refresh(){try{const response=await fetch('https://api.kraken.com/0/public/OHLC?pair=XBTUSD&interval=1',{cache:'no-store'});if(!response.ok)throw Error('HTTP '+response.status);const json=await response.json();if(json.error?.length)throw Error(json.error.join(', '));const key=Object.keys(json.result||{}).find(k=>k!=='last');if(!key)throw Error('No BTC candle feed');const rows=json.result[key];if(!Array.isArray(rows)||!rows.length)throw Error('No candle rows');candles=rows.slice(-100).map(r=>({t:Number(r[0]),o:Number(r[1]),h:Number(r[2]),l:Number(r[3]),c:Number(r[4])})).filter(c=>[c.o,c.h,c.l,c.c].every(Number.isFinite));if(!candles.length)throw Error('Invalid candle data');const latest=candles[candles.length-1];$('price').textContent=money(latest.c);$('updated').textContent='Latest candle: '+new Date(latest.t*1000).toLocaleString()+' · Source: Kraken public OHLC';$('status').textContent='BTC feed connected';$('status').className='pill green';$('details').textContent='BTC: Kraken public OHLC connected. Kalshi: disconnected. Futures positioning: disconnected.';lastGood=Date.now();draw();evaluate()}catch(e){signalState('WAIT','BTC feed unavailable.');$('status').textContent='BTC feed unavailable';$('status').className='pill red';$('updated').textContent='Live BTC data unavailable: '+String(e.message||e);$('details').textContent='BTC feed failed or browser blocked request. Kalshi and futures positioning are not connected.';if(!lastGood){candles=[];$('price').textContent='—';$('supply').textContent='—';$('demand').textContent='—'}draw()}}
+async function refresh(){try{const response=await fetch('https://api.kraken.com/0/public/OHLC?pair=XBTUSD&interval=1',{cache:'no-store'});if(!response.ok)throw Error('HTTP '+response.status);const json=await response.json();if(json.error?.length)throw Error(json.error.join(', '));const key=Object.keys(json.result||{}).find(k=>k!=='last');if(!key)throw Error('No BTC candle feed');const rows=json.result[key];if(!Array.isArray(rows)||!rows.length)throw Error('No candle rows');candles=rows.slice(-100).map(r=>({t:Number(r[0]),o:Number(r[1]),h:Number(r[2]),l:Number(r[3]),c:Number(r[4])})).filter(c=>[c.o,c.h,c.l,c.c].every(Number.isFinite));if(!candles.length)throw Error('Invalid candle data');const latest=candles[candles.length-1];$('price').textContent=money(latest.c);$('updated').textContent='Latest candle: '+new Date(latest.t*1000).toLocaleString()+' · Source: Kraken public OHLC';$('status').textContent='BTC feed connected';$('status').className='pill green';$('details').textContent='BTC: Kraken public OHLC connected. Kalshi: '+(currentMarket?'public market lookup connected':'unavailable or pending')+'. Futures positioning: disconnected.';lastGood=Date.now();draw();evaluate()}catch(e){signalState('WAIT','BTC feed unavailable.');$('status').textContent='BTC feed unavailable';$('status').className='pill red';$('updated').textContent='Live BTC data unavailable: '+String(e.message||e);$('details').textContent='BTC feed failed or browser blocked request. Kalshi and futures positioning are not connected.';if(!lastGood){candles=[];$('price').textContent='—';$('supply').textContent='—';$('demand').textContent='—'}draw()}}
 
 function signalState(name,reason){$('signal').textContent=name;$('signal').className=name==='WAIT'?'warning':name==='EXIT'?'red':'green';$('reason').textContent=reason;}
 function evaluate(){
@@ -50,6 +51,56 @@ function evaluate(){
 }
 $('evaluate').addEventListener('click',evaluate);
 $('clear').addEventListener('click',()=>{inputIds.forEach(id=>$(id).value='');$('setup').textContent='Quotes cleared.';signalState('WAIT','Market inputs cleared.');});
-window.addEventListener('resize',draw);draw();refresh();setInterval(refresh,15000);
+// Kalshi public API: no API keys, orders, or account permissions are used.
+// Only show contract values actually returned by Kalshi; never infer a strike from BTC candles.
+const KALSHI_BASE='https://api.elections.kalshi.com/trade-api/v2';
+const SERIES='KXBTC15M';
+const num=(v)=>v===null||v===undefined||v===''?NaN:Number(v);
+function cents(m,side,kind){
+  const dollars=num(m[side+'_'+kind+'_dollars']);
+  if(Number.isFinite(dollars))return Math.round(dollars*10000)/100;
+  const legacy=num(m[side+'_'+kind]);
+  return Number.isFinite(legacy)?legacy:NaN;
+}
+function fmtCents(v){return Number.isFinite(v)?v.toFixed(2).replace(/\.00$/,'')+'¢':'—';}
+function marketEnd(m){return Date.parse(m.close_time||m.expiration_time||'');}
+function updateCountdown(){
+  if(!currentMarket){$('countdown').textContent='—';return;}
+  const remain=Math.max(0,Math.ceil((marketEnd(currentMarket)-Date.now())/1000));
+  $('countdown').textContent=Math.floor(remain/60)+':'+String(remain%60).padStart(2,'0');
+  if(remain===0){$('kalshiStatus').textContent='Market ended';signalState('WAIT','Market ended. Looking for the next contract.');currentMarket=null;refreshKalshi();}
+}
+function displayMarket(m){
+  currentMarket=m;marketLastGood=Date.now();
+  $('marketName').textContent=m.ticker||'Unknown ticker';
+  $('liveYes').textContent=fmtCents(cents(m,'yes','ask'))+' / '+fmtCents(cents(m,'yes','bid'));
+  $('liveNo').textContent=fmtCents(cents(m,'no','ask'))+' / '+fmtCents(cents(m,'no','bid'));
+  // Kalshi market titles/rules vary: do not guess a numeric target from a title.
+  const strike=num(m.floor_strike);
+  $('liveStrike').textContent=Number.isFinite(strike)?money(strike):'Verify on Kalshi';
+  $('kalshiStatus').textContent='Public feed';
+  $('marketNote').textContent=(m.title||'')+' · Public quotes may be delayed; verify market rules, strike, and current prices on Kalshi. No validated BUY/EXIT signals yet.';
+  $('marketLink').href='https://kalshi.com/markets';
+  updateCountdown();
+}
+async function refreshKalshi(){
+  try{
+    const url=KALSHI_BASE+'/markets?series_ticker='+encodeURIComponent(SERIES)+'&status=open&limit=100';
+    const r=await fetch(url,{cache:'no-store'});
+    if(!r.ok)throw Error('Kalshi HTTP '+r.status);
+    const payload=await r.json();
+    if(!Array.isArray(payload.markets))throw Error('Unexpected Kalshi response');
+    const now=Date.now();
+    const valid=payload.markets.filter(m=>m.ticker&&Number.isFinite(marketEnd(m))&&marketEnd(m)>now&&m.status==='active');
+    valid.sort((a,b)=>marketEnd(a)-marketEnd(b));
+    if(!valid.length)throw Error('No active BTC 15-minute market found');
+    displayMarket(valid[0]);
+  }catch(e){
+    marketError=String(e.message||e);
+    if(!currentMarket){$('marketName').textContent='Unavailable';$('liveYes').textContent='— / —';$('liveNo').textContent='— / —';$('liveStrike').textContent='—';$('kalshiStatus').textContent='Not connected';$('marketNote').textContent='Automatic lookup unavailable: '+marketError+'. Open Kalshi to check the market manually.';}
+    signalState('WAIT','Kalshi live quotes/fees are not verified. No automatic trade recommendation.');
+  }
+}
+window.addEventListener('resize',draw);draw();refresh();refreshKalshi();setInterval(refresh,15000);setInterval(refreshKalshi,15000);setInterval(updateCountdown,1000);
 </script>
 </body></html>
