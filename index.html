@@ -53,7 +53,7 @@ $('evaluate').addEventListener('click',evaluate);
 $('clear').addEventListener('click',()=>{inputIds.forEach(id=>$(id).value='');$('setup').textContent='Quotes cleared.';signalState('WAIT','Market inputs cleared.');});
 // Kalshi public API: no API keys, orders, or account permissions are used.
 // Only show contract values actually returned by Kalshi; never infer a strike from BTC candles.
-const KALSHI_BASE=const KALSHI_BASE='https://external-api.kalshi.com/trade-api/v2';
+const KALSHI_BASE='https://external-api.kalshi.com/trade-api/v2';
 // The browser must be allowed to access this API (CORS). A successful direct URL visit does not establish browser fetch access.
 
 const SERIES='KXBTC15M';
